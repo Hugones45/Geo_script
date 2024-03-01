@@ -1,0 +1,238 @@
+import geopandas as gpd
+import os
+import matplotlib
+import matplotlib.pyplot as plt # Para trabalhar com fig, ax, gerando bases para os mapas.
+from mpl_toolkits.axes_grid1 import make_axes_locatable # Para pordermos editar a legenda.
+
+# Na função abaixo nos pegamos todos os caminhos e fizemos eles retornar em um array
+def paths ():
+    all_counties = os.getcwd() + "/map_data/municipios.shp"
+    airport = os.getcwd() + "/map_data/aeroportos.shp"
+    highways = os.getcwd() + "/map_data/rodovias.shp"
+    
+    return [all_counties, airport, highways]
+
+# Já na segunda função abaixo nos pegamos o paths (), colocamos em uma variavel
+# Depois criamos outra variavel vazia, shapefiles, esta então ira receber o resultado iterado de list_shapefiles por um for i
+# Retornamos shapefiles e aqui podemos colocar nela um numeral entre colchetes e plotar, ou podemos fazer isso ai invocar a função
+
+def open_shape_file (): 
+    return [gpd.read_file(i) for i in paths()]
+
+# Acima a função iterada, abaixo a função original, que é maior mas funciona da mesma maneira
+
+#def open_shape_file ():
+   # list_shapefiles = paths()
+   # shapefiles = []
+   # for i in list_shapefiles:
+       # shapefiles.append(gpd.read_file(i))
+    #return shapefiles[2].plot()
+   # return shapefiles
+
+municipios = gpd.read_file(os.getcwd() + "/map_data/municipios.shp")
+
+def filter_counties (state, shapes):
+    return shapes[shapes['uf'] == state]
+
+def aeroportos (shape, municipios_filter):
+    pontos = gpd.sjoin(shape, municipios_filter, predicate = 'within')
+    total_aero_classifi = pontos.value_counts('TipoAero')
+    total_pavi =  pontos.value_counts('pavimento')
+    return pontos, total_aero_classifi, total_pavi
+
+    
+   # return gpd.sjoin(shape, municipios_filter, predicate = 'within') #originalmente aqui era op, de operation mas o python nos avisa de que esse método está ultrapassado.
+   # E nos diz para usar predicate no lugar.
+
+def roads(shape, municipios_filter):
+    gdf = gpd.overlay(shape, municipios_filter, how='intersection')
+    gdf_projetado = gdf.copy()
+    gdf_projetado['geometry'] = gdf_projetado['geometry'].to_crs(epsg=5880)
+    gdf_projetado['distancia_km'] = gdf_projetado['geometry'].length / 1000
+
+    distancias = gdf_projetado.dissolve(by='nm_tipo_tr', aggfunc='sum')['distancia_km']
+    
+    return gdf, distancias
+
+
+def run (runState):
+    shapes_each_item = open_shape_file()
+    municipio_filter = filter_counties(runState, shapes_each_item[0])
+    pontos, total_aero_classifi, total_pavi = aeroportos(shapes_each_item[1], municipio_filter)
+    gdf_roads, stats_distance = roads(shapes_each_item[2], municipio_filter)
+    
+    # print(f'Estatisticas do Estado de {runState}')
+    # print(total_aero_classifi)
+    # print(stats_distance)
+    # print()
+    # pontos.plot()
+    # gdf_roads.plot()
+    return municipio_filter, gdf_roads, pontos
+
+
+
+
+
+
+
+
+municipio_filter, gdf_roads, pontos = run('MG')
+
+# Vamos realizar agora um plot dessa area considerando dos municipios, gerando um degrade da area menor para a area maior
+# Para isso vamos calcular a area do municpio (com as funções que conhecemos) e a partir disso gerar o nosso plot.
+
+# Vamos entender a função abaixo:
+
+# Para calcular a area vamos usar o geometry e a coluna areas, mas vale lembrar que antes dessa funcao, nos dados estao em graus, por isso precisamos converter nosso geometry para dados projetados.
+# A parte da função que a frase acima fala então fica da seguinte maneira => municipio_filter['area'] = municipio_filter['geometry'].to_crs(epsg=5880).area
+# Usamos o crs para projetar um DATUM e transformar nossas coordenadas de graus para metros, lembrando que é preciso pegar o DATUM certo.
+
+# Depois como estamos recebendo a area em metros quadrados e esta é uma area muito grande, vamos converte-la para quilometros quadrados, ficando melhor o recebimento da metragem.
+municipio_filter['area'] = municipio_filter['geometry'].to_crs(epsg=5880).area/1000000
+
+
+
+
+
+
+
+
+
+
+
+
+# Agora para trabalharmos com muitos plots, normalmente geramos uma base (uma "carcaça") para podermos plotar varios mapas.
+
+# Para aumentarmos o tamanho do mapa, é aqui que mexemos, colocando um parametro, figsize que é uma tupla com valores X e Y
+fig, ax = plt.subplots(1,1, figsize=(20,20))
+
+# Agora vamos atribuir nosso mapa ao nosso ax, fazemos isso com o primeiro parametro abaixo ax = ax, e como temos apenas um mapa, não podemos mudar a configuração de (1,1) do fig, ax
+# Também podemos colocar uma legenda em nosso mapa com o parametro legend = True, e como estamos usando area nosso degrade ira analisar essa coluna.
+
+municipio_filter.plot(ax=ax, column='area', legend=True)
+
+# Com o nosso resultado atual, podemos aumentar o tamanho do mapa, mas nossa barra de escala fica desigual em tamanho
+# Para resolvermos isso precisamos de uma biblioteca especifica => from mpl_toolkits.axes_grid1 import make_axes_locatable
+# Esse import ira nos disponibilizar uma serie de ferramentas para trabalharmos com atributos do mapa, no caso dessa aula, com a legenda.
+
+
+
+
+fig, ax = plt.subplots(1,1, figsize=(12, 12))
+
+
+div = make_axes_locatable(ax) # Aqui atribuimos o nosso mapa as ferramentas de construção de legenda. IMPORTANTE, se tiver duvida, recisar a aula.
+
+cax = div.append_axes("right", size='5%', pad= 0.3) # Agora criamos um cax e nele colocamos nossa div com outra modalidade de ferramenta
+# No codigo acima, nos parametros nos temos, de que lado nosso mapa vai ficar, "right", a largura da barra da escala em porcentagem size ="5% e o padding que separa a barra do mapa em float, pad = 0.3
+
+# Por fim colocamos esse cax em nosso plot, atribuindo a configuração que fizemos para nossa barra de escala.
+municipio_filter.plot(ax=ax, column='area', legend=True, cax=cax)
+
+
+
+
+
+
+
+
+
+# Vamos dar continuidade as configurações de nosso mapa estatico desenvolvido em python.
+# Primeiro, vamos adicionar um titulo.
+
+
+fig, ax = plt.subplots(1,1, figsize=(12, 12))
+
+# Abaixo vemos nos parametros title, o nome do titulo, seu tamanho e seu distancimento em relação ao mapa
+plt.title('Área dos Municípios', fontsize=20, y=1.03)
+
+div = make_axes_locatable(ax) 
+
+cax = div.append_axes("bottom", size='5%', pad= 0.7)
+
+# No plot, temos um novo parametro que podemos adicionar para as legendas que se chama legend_kwds
+# Esse parametro recebe um dicionario que recebe informações, colocamos uma chave e dai um label e um varlor como label : area, orientation : horizontal...
+municipio_filter.plot(ax=ax, column='area', legend=True, cax=cax, legend_kwds={"label": "Área (km2)", "orientation":"horizontal"})
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Existem inumeras maneiras de gerar legendas que classificão o mapa de uma maneira diferente, para isso nos instalamos uma biblioteca chamada mapclassify
+# Porém perceba abaixo como tivemos que apagar as estruturas de edição da nossa legenda padrão, pois o mapclassify gera conflito junto a esses codigos, então tiramos tudo para não dar erro.
+
+fig, ax = plt.subplots(1,1, figsize=(20, 20))
+
+plt.title('Área dos Municípios', fontsize=20, y=1.03)
+
+# Abaixo no plot, colocamos scheme e dentro de scheme temos inumeros métodos de classificação
+# Com outros parametros também podemos manipular as classificações, como por exemplo o "k", que permite decidir o numero de classes.
+# Por padrão o mapa abaixo possui cinco niveis de classe, vamos colco 10
+
+base = municipio_filter.plot(ax=ax, column='area', legend=True, cmap='plasma_r', k=6, scheme = 'quantiles')
+gdf_roads.plot(ax = base, color='white', linestyle='dotted')
+
+pontos.plot(ax=base, marker = '*', color='red')
+# Porém alguns parametros de edição como o "k", podem vir a não funcionar dependendo da estrutura do scheme utilizado.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(1, 1, figsize=(20, 20))
+
+plt.title('Área dos Municípios', fontsize=20, y=1.03)
+
+# Plot municipio_filter with legend
+base = municipio_filter.plot(ax=ax, column='area', cmap='cividis_r', k=8, scheme='quantiles', legend=True)
+
+# Plot gdf_roads with legend
+gdf_roads.plot(ax=base, color='aquamarine', linestyle='dotted', label='Estradas')
+
+# Plot pontos with legend
+pontos.plot(ax=base, marker='*', color='red', label='Aeroportos')
+
+# Get the legend of municipio_filter plot
+legend_municipio_filter = base.get_legend()
+
+# Set the title for the legend
+legend_municipio_filter.set_title('Area em Km2')
+
+
+# Display legends for municipio_filter, gdf_roads, and pontos
+base_legend = base.get_legend()
+gdf_roads_legend = ax.legend(loc='upper right')
+
+# Add municipio_filter legend back to the base legend
+base_legend.set_bbox_to_anchor((0.16, 1))
+ax.add_artist(base_legend)
+
+# Adjust bbox_to_anchor values for gdf_roads_legend to position it below base_legend
+gdf_roads_legend.set_bbox_to_anchor((0.12, 0.83))
+
+# Add gdf_roads_legend below base_legend
+ax.add_artist(gdf_roads_legend)
+
+# fig.savefig('map_plot.png', dpi=300, bbox_inches='tight') Exportar o mapa em imagem
+
+
+plt.show()
